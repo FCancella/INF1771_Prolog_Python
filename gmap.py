@@ -2,6 +2,8 @@
 import pygame
 import sys, time, random
 from pyswip import Prolog, Functor, Variable, Query
+import heapq
+from TreeNode import TreeNode
 
 import pathlib
 current_path = str(pathlib.Path().resolve())
@@ -44,14 +46,154 @@ prolog.consult(pl_file)
 
 last_action = ""
 
-def decisao():
+def heuristica(pos1, pos2):
+    return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
 
+def vizinhos(pos, posicoes_seguras):
+    x, y = pos
+    candidatos = [
+        (x + 1, y),  # leste
+        (x - 1, y),  # oeste
+        (x, y + 1),  # norte
+        (x, y - 1)   # sul
+    ]
+    return [(nx, ny) for nx, ny in candidatos 
+            if 1 <= nx <= size_x and 1 <= ny <= size_y 
+            and (nx, ny) in posicoes_seguras]
+
+def a_estrela(inicio, objetivo, posicoes_seguras):
+    if inicio == objetivo:
+        return [inicio]
+    
+    h_inicial = heuristica(inicio, objetivo)
+    no_inicial = TreeNode(inicio, fx=h_inicial, gx=0)
+    
+    fila = [no_inicial]
+    visitados_set = set()
+    
+    while fila:
+        no_atual = heapq.heappop(fila)
+        pos_atual = no_atual.get_coord()
+        
+        if pos_atual in visitados_set:
+            continue
+        
+        visitados_set.add(pos_atual)
+        
+        if pos_atual == objetivo:
+            caminho = []
+            no = no_atual
+            while no is not None:
+                caminho.append(no.get_coord())
+                no = no.get_parent()
+            return list(reversed(caminho))
+        
+        # Add os vizinhos
+        for pos_prox in vizinhos(pos_atual, posicoes_seguras):
+            if pos_prox not in visitados_set:
+                novo_g = no_atual.get_value_gx() + 1
+                novo_h = heuristica(pos_prox, objetivo)
+                novo_f = novo_g + novo_h
+                
+                no_vizinho = TreeNode(pos_prox, fx=novo_f, gx=novo_g)
+                no_vizinho.set_parent(no_atual)
+                
+                heapq.heappush(fila, no_vizinho)
+    
+    return None
+
+def construir_acoes(caminho, direcao_inicial):
+    """
+    Converte um caminho de posições em uma sequência de ações (virar/andar).
+    Retorna lista de strings com ações.
+    """
+    acoes = []
+    dir_atual = direcao_inicial
+    
+    for i in range(len(caminho) - 1):
+        pos_atual = caminho[i]
+        pos_proxima = caminho[i + 1]
+        
+        x1, y1 = pos_atual
+        x2, y2 = pos_proxima
+
+        if x2 > x1:
+            dir_necessaria = 'leste'
+        elif x2 < x1:
+            dir_necessaria = 'oeste'
+        elif y2 > y1:
+            dir_necessaria = 'norte'
+        elif y2 < y1:
+            dir_necessaria = 'sul'
+        
+        direcoes = ['norte', 'leste', 'sul', 'oeste']        
+        
+        idx_atual = direcoes.index(dir_atual)
+        idx_necessaria = direcoes.index(dir_necessaria)
+        
+        # Calcula diferença circular
+        diff = (idx_necessaria - idx_atual) % 4
+        
+        if diff == 0:
+            rotacoes = []
+        elif diff == 1:
+            rotacoes = ['virar_direita']
+        elif diff == 2:
+            rotacoes = ['virar_direita', 'virar_direita']
+        elif diff == 3:
+            rotacoes = ['virar_esquerda']
+        
+        acoes.extend(rotacoes)
+        dir_atual = dir_necessaria
+        acoes.append('andar')
+    
+    return acoes
+
+def posicoes_conhecidas_seguras():
+    coordenadas = list(prolog.query("posicoes_conhecidas_seguras(L)"))
+    if len(coordenadas) > 0:
+        coordenadas = coordenadas[0]['L']
+        coordenadas = [eval(s.lstrip(',')) for s in coordenadas]
+    return coordenadas
+
+def voltar_inicio():
+    """Usa A* para encontrar caminho até (1,1) e retorna lista de ações"""
+    global player_pos
+    
+    x_atual, y_atual, dir_atual = player_pos
+    pos_atual = (x_atual, y_atual)
+    pos_objetivo = (1, 1)
+    
+    posicoes_seguras = set(visitados)
+    
+    caminho = a_estrela(pos_atual, pos_objetivo, posicoes_seguras)
+    
+    acoes = construir_acoes(caminho, dir_atual)
+    
+    return acoes
+
+acoes_fila = []
+
+def decisao():
+    global acoes_fila
+    
+    if acoes_fila:
+        return acoes_fila.pop(0)
+    
     acao = ""    
     
     acoes = list(prolog.query("executa_acao(X)"))
     if len(acoes) > 0:
         acao = acoes[0]['X']
-
+    
+    # Se a ação for 'fim', calcula o caminho de volta ao início
+    if acao == "fim":
+        acoes_fila = voltar_inicio()
+        if acoes_fila:
+            return acoes_fila.pop(0)
+        else:
+            return ""
+    
     return acao
 
 

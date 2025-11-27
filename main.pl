@@ -2,11 +2,15 @@
 :-dynamic posicao/3.
 :-dynamic memory/3.
 :-dynamic visitado/2.
+:-dynamic num_visitas/3.
 :-dynamic certeza/2.
 :-dynamic energia/1.
 :-dynamic pontuacao/1.
+:-dynamic ouro/1.
 
-:-consult('mapa.pl').
+:-consult('mapa_facil.pl').
+%:-consult('mapa_medio.pl').
+%:-consult('mapa_dificil.pl').
 
 delete([], _, []).
 delete([Elem|Tail], Del, Result) :-
@@ -26,6 +30,11 @@ reset_game :- retractall(memory(_,_,_)),
 			retractall(posicao(_,_,_)),
 			assert(energia(100)),
 			assert(pontuacao(0)),
+            assert(certeza(1,1)),
+			retractall(ouro(_)),
+            assert(ouro(0)),
+			retractall(num_visitas(_,_,_)),
+			assert(num_visitas(1,1,1)),
 			assert(posicao(1,1, norte)).
 
 
@@ -37,6 +46,9 @@ reset_game :- retractall(memory(_,_,_)),
 
 %atualiza pontuacao
 atualiza_pontuacao(X):- pontuacao(P), retract(pontuacao(P)), NP is P + X, assert(pontuacao(NP)),!.
+
+%atualiza ouro
+atualiza_ouro:- ouro(O), retract(ouro(O)), NO is O + 1, assert(ouro(NO)),!.
 
 %atualiza energia
 atualiza_energia(N):- energia(E), retract(energia(E)), NE is E + N, 
@@ -71,30 +83,40 @@ virar_esquerda :- posicao(X,Y, oeste), retract(posicao(_,_,_)), assert(posicao(X
 virar_esquerda :- posicao(X,Y, sul), retract(posicao(_,_,_)), assert(posicao(X, Y, leste)),atualiza_pontuacao(-1),!.
 virar_esquerda :- posicao(X,Y, leste), retract(posicao(_,_,_)), assert(posicao(X, Y, norte)),atualiza_pontuacao(-1),!.
 
+% Incrementa contador de visitas
+incrementar_visitas(X, Y) :-
+    (num_visitas(X, Y, N) ->
+        retract(num_visitas(X, Y, N)),
+        NN is N + 1,
+        assert(num_visitas(X, Y, NN))
+    ;
+        assert(num_visitas(X, Y, 1))
+    ).
+
 %andar
 andar :- posicao(X,Y,P), P = norte, map_size(_,MAX_Y), Y < MAX_Y, YY is Y + 1, 
          retract(posicao(X,Y,_)), assert(posicao(X, YY, P)), 
 		 %((retract(certeza(X,YY)), assert(certeza(X,YY))); assert(certeza(X,YY))),
 		 set_real(X,YY),
-		 ((retract(visitado(X,Y)), assert(visitado(X,Y))); assert(visitado(X,Y))),atualiza_pontuacao(-1),!.
+		 ((retract(visitado(X,Y)), assert(visitado(X,Y))); assert(visitado(X,Y))),atualiza_pontuacao(-1),incrementar_visitas(X,YY),!.
 		 
 andar :- posicao(X,Y,P), P = sul,  Y > 1, YY is Y - 1, 
          retract(posicao(X,Y,_)), assert(posicao(X, YY, P)), 
 		 %((retract(certeza(X,YY)), assert(certeza(X,YY))); assert(certeza(X,YY))),
 		 set_real(X,YY),
-		 ((retract(visitado(X,Y)), assert(visitado(X,Y))); assert(visitado(X,Y))),atualiza_pontuacao(-1),!.
+		 ((retract(visitado(X,Y)), assert(visitado(X,Y))); assert(visitado(X,Y))),atualiza_pontuacao(-1),incrementar_visitas(X,YY),!.
 
 andar :- posicao(X,Y,P), P = leste, map_size(MAX_X,_), X < MAX_X, XX is X + 1, 
          retract(posicao(X,Y,_)), assert(posicao(XX, Y, P)), 
 		 %((retract(certeza(XX,Y)), assert(certeza(XX,Y))); assert(certeza(XX,Y))),
 		 set_real(XX,Y),
-		 ((retract(visitado(X,Y)), assert(visitado(X,Y))); assert(visitado(X,Y))),atualiza_pontuacao(-1),!.
+		 ((retract(visitado(X,Y)), assert(visitado(X,Y))); assert(visitado(X,Y))),atualiza_pontuacao(-1),incrementar_visitas(XX,Y),!.
 
 andar :- posicao(X,Y,P), P = oeste,  X > 1, XX is X - 1, 
          retract(posicao(X,Y,_)), assert(posicao(XX, Y, P)), 
 		 %((retract(certeza(XX,Y)), assert(certeza(XX,Y))); assert(certeza(XX,Y))),
 		 set_real(XX,Y),
-		 ((retract(visitado(X,Y)), assert(visitado(X,Y))); assert(visitado(X,Y))),atualiza_pontuacao(-1),!.
+		 ((retract(visitado(X,Y)), assert(visitado(X,Y))); assert(visitado(X,Y))),atualiza_pontuacao(-1),incrementar_visitas(XX,Y),!.
 		 
 %pegar	
 pegar :- posicao(X,Y,_), tile(X,Y,'O'), retract(tile(X,Y,'O')), assert(tile(X,Y,'')), atualiza_pontuacao(-5), atualiza_pontuacao(500),set_real(X,Y),!. 
@@ -241,16 +263,137 @@ show_mem(_,0) :- energia(E), pontuacao(P), write('E: '), write(E), write('   P: 
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Utils
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%apagar esta linha - apenas para demonstracao aleatoria
-executa_acao(X) :- L=['virar_esquerda','virar_direita','andar','pegar'],random_between(1,4,I), nth1(I, L, X),!.
+% Checa se uma posição é perigosa (tem certeza de que há perigo)
+posicao_perigosa(X, Y) :-
+    certeza(X, Y),
+    memory(X, Y, Obs),
+    (member(brisa, Obs); member(passos, Obs); member(palmas, Obs)).
 
-%apagar linhas abaixo... sao exemplos de resposta
-%executa_acao(andar) :- posicao(PX, _, oeste), PX > 1, X = andar,!.
-%executa_acao(andar) :- posicao(PX, _, leste), PX < 3, X = andar,!.
-%executa_acao(pegar) :- posicao(PX, PY,_), tem_ouro(PX, PY), !.
-%executa_acao(voltar) :- peguei_todos_ouros,!.
+% Posicao segura (tem certeza de que não há perigo)
+posicao_segura(X, Y) :-
+    certeza(X, Y),
+    (memory(X, Y, Obs) -> (Obs = []; (\+ member(brisa, Obs), \+ member(passos, Obs), \+ member(palmas, Obs))); true).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Navegação
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+% Prioridade 1: Posições seguras não visitadas
+prox_posicao(Pos) :-
+    adjacente(X, Y),
+    \+ visitado(X, Y),
+    posicao_segura(X, Y),
+    Pos = (X, Y), !.
 
+% Prioridade 2: Posições incertas (Remove brisa/palmas porque são mais perigosos)
+prox_posicao(Pos) :-
+    adjacente(X, Y),
+    \+ visitado(X, Y),
+    \+ certeza(X, Y),
+    (memory(X, Y, Obs) -> 
+        (Obs = []; (\+ member(brisa, Obs), \+ member(palmas, Obs))); 
+        true),
+    Pos = (X, Y), !.
 
+% Prioridade 3: Backtracking para posições seguras já visitadas
+% Se MinVisitas <= 3, vai para lá; se > 3, 60% de chance de falhar e tentar próxima prioridade
+% Isso faz com que a partir de um certo ponto o agente arrisque e aleatorize mais
+prox_posicao(Pos) :-
+    findall((NumVisitas, X, Y),
+            (adjacente(X, Y), 
+             visitado(X, Y), 
+             posicao_segura(X, Y),
+             (num_visitas(X, Y, NumVisitas) -> true; NumVisitas = 0)),
+            L),
+    L \= [],
+    sort(L, [(MinVisitas, MinX, MinY)|_]),
+    (MinVisitas =< 3 ->
+        Pos = (MinX, MinY), !
+    ;
+        random_between(1, 10, D),
+        (D =< 6 -> fail; Pos = (MinX, MinY), !)
+    ).
+
+% Prioridade 4: Arriscar em posições incertas (com inteligência)
+prox_posicao(Pos) :-
+    findall((Prioridade, X, Y),
+            (adjacente(X, Y), 
+             \+ visitado(X, Y), 
+             \+ certeza(X, Y),
+             % Ordena as incertezas pelo nível de perigo (Vazio -> passos -> brisa e palmas)
+             (memory(X, Y, Obs) ->
+                ((\+ member(brisa, Obs), \+ member(palmas, Obs)) ->
+                    (Obs = [] -> Prioridade = 0; Prioridade = 1);
+                 Prioridade = 2);
+              Prioridade = 0)),
+            L),
+    L \= [],
+    sort(L, [(_, X, Y)|_]),
+    Pos = (X, Y), !.
+
+% Obs.: Nao randomizamos a prox_posicao, então em uma mesma posicao, sempre escolhemos a mesma próxima posição.
+% Isso é importante para garantir que o direcionamento funcione corretamente.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Direcionamento
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+dir_enum(norte, 0).
+dir_enum(leste, 1).
+dir_enum(sul, 2).
+dir_enum(oeste, 3).
+
+% Direcao de uma posicao para outra
+define_dir((X, Y), (X2, Y2), Direcao) :-
+    DeltaX is X2 - X,
+    DeltaY is Y2 - Y,
+    (DeltaX > 0 -> Direcao = leste;
+     DeltaX < 0 -> Direcao = oeste;
+     DeltaY > 0 -> Direcao = norte;
+               Direcao = sul).
+
+% Rotacao necessaria para chegar na direcao final
+rotacao(DirAtual, DirFinal, Acao) :-
+    dir_enum(DirAtual, N1),
+    dir_enum(DirFinal, N2),
+    Diff is (N2 - N1 + 4) mod 4,
+    (Diff =< 2 -> Acao = virar_direita; Acao = virar_esquerda).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Execução
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+executa_acao(fim) :- ouro(Q), Q = 3, !.
+executa_acao(pegar) :- posicao(X, Y, _), memory(X, Y, L), member(brilho, L), atualiza_ouro, !.
+executa_acao(pegar) :- posicao(X, Y, _), memory(X, Y, L), member(reflexo, L), energia(E), E < 70, !.
+
+% Se já está na direção certa, anda
+executa_acao(andar) :-
+    posicao(X, Y, DirAtual),
+    prox_posicao((PX, PY)),
+    define_dir((X, Y), (PX, PY), DirFinal),
+    DirAtual = DirFinal, !.
+
+% Se não está na direção certa, gira (escolhe melhor rotação)
+executa_acao(Acao) :-
+    posicao(X, Y, DirAtual),
+    prox_posicao((PX, PY)),
+    define_dir((X, Y), (PX, PY), DirFinal),
+    DirAtual \= DirFinal,
+    rotacao(DirAtual, DirFinal, Acao), !.
+
+% Movimento aleatório: anda se não for perigoso, senão vira
+executa_acao(andar) :- 
+    write("Random - andar"),nl,
+    posicao(X, Y, Dir),
+    adjacente(XX, YY),
+    define_dir((X, Y), (XX, YY), Dir),
+    \+ posicao_perigosa(XX, YY), !.
+
+executa_acao(X) :- 
+    write("Random - virar"),nl, 
+    random_between(1,2,I), 
+    (I = 1 -> X = virar_esquerda; X = virar_direita), !.
