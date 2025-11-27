@@ -7,10 +7,11 @@
 :-dynamic energia/1.
 :-dynamic pontuacao/1.
 :-dynamic ouro/1.
+:-dynamic posicao_energia/2.
 
-:-consult('mapa_facil.pl').
+%:-consult('mapa_facil.pl').
 %:-consult('mapa_medio.pl').
-%:-consult('mapa_dificil.pl').
+:-consult('mapa_dificil.pl').
 
 delete([], _, []).
 delete([Elem|Tail], Del, Result) :-
@@ -35,7 +36,8 @@ reset_game :- retractall(memory(_,_,_)),
             assert(ouro(0)),
 			retractall(num_visitas(_,_,_)),
 			assert(num_visitas(1,1,1)),
-			assert(posicao(1,1, norte)).
+			assert(posicao(1,1, norte)),
+			retractall(posicao_energia(_,_)).
 
 
 :-reset_game.
@@ -120,7 +122,7 @@ andar :- posicao(X,Y,P), P = oeste,  X > 1, XX is X - 1,
 		 
 %pegar	
 pegar :- posicao(X,Y,_), tile(X,Y,'O'), retract(tile(X,Y,'O')), assert(tile(X,Y,'')), atualiza_pontuacao(-5), atualiza_pontuacao(500),set_real(X,Y),!. 
-pegar :- posicao(X,Y,_), tile(X,Y,'U'), retract(tile(X,Y,'U')), assert(tile(X,Y,'')), atualiza_pontuacao(-5), atualiza_energia(50),set_real(X,Y),!. 
+pegar :- posicao(X,Y,_), tile(X,Y,'U'), retract(tile(X,Y,'U')), assert(tile(X,Y,'')), atualiza_pontuacao(-5), atualiza_energia(50),set_real(X,Y),retract(posicao_energia(X,Y)),!. 
 pegar :- atualiza_pontuacao(-5),!.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -201,7 +203,8 @@ set_real2(X,Y):- tile(X,Y,'P'), ((retract(memory(X,Y,_)),assert(memory(X,Y,[bris
 set_real2(X,Y):- tile(X,Y,'O'), ((retract(memory(X,Y,_)),assert(memory(X,Y,[brilho])),!);assert(memory(X,Y,[brilho]))),!.
 set_real2(X,Y):- tile(X,Y,'T'), ((retract(memory(X,Y,_)),assert(memory(X,Y,[palmas])),!);assert(memory(X,Y,[palmas]))),!.
 set_real2(X,Y):- ((tile(X,Y,'D'),!); tile(X,Y,'d')), ((retract(memory(X,Y,_)),assert(memory(X,Y,[passos])),!);assert(memory(X,Y,[passos]))),!.
-set_real2(X,Y):- tile(X,Y,'U'), ((retract(memory(X,Y,_)),assert(memory(X,Y,[reflexo])),!);assert(memory(X,Y,[reflexo]))),!.
+set_real2(X,Y):- tile(X,Y,'U'), ((retract(memory(X,Y,_)),assert(memory(X,Y,[reflexo])),!);assert(memory(X,Y,[reflexo]))),
+				 (retractall(posicao_energia(_,_)), assert(posicao_energia(X,Y))),!.
 set_real2(X,Y):- tile(X,Y,''), ((retract(memory(X,Y,_)),assert(memory(X,Y,[])),!);assert(memory(X,Y,[]))),!.
 
 
@@ -276,6 +279,10 @@ posicao_perigosa(X, Y) :-
 posicao_segura(X, Y) :-
     certeza(X, Y),
     (memory(X, Y, Obs) -> (Obs = []; (\+ member(brisa, Obs), \+ member(passos, Obs), \+ member(palmas, Obs))); true).
+
+% Retorna lista de todas as posições visitadas que são seguras
+posicoes_visitadas_seguras(L) :-
+    findall((X, Y), (visitado(X, Y), posicao_segura(X, Y)), L).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Navegação
@@ -366,9 +373,22 @@ rotacao(DirAtual, DirFinal, Acao) :-
 % Execução
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+executa_acao(pegar) :- posicao(X, Y, _), memory(X, Y, L), member(reflexo, L), energia(E), E < 80, !.
 executa_acao(fim) :- ouro(Q), Q = 3, !.
+
+% Se energia está baixa e existe energia disponível, vai buscar
+% Se estiver em perigo, anda primeiro; senão chama energia(X,Y)
+executa_acao(Acao) :- 
+    energia(E), E < 80,
+    posicao_energia(X, Y),
+    posicao(PX, PY, _),
+    (posicao_perigosa(PX, PY) ->
+        (Acao = andar)
+    ;
+        (Acao = energia(X, Y), write("Busca energia"),nl)
+    ), !.
+
 executa_acao(pegar) :- posicao(X, Y, _), memory(X, Y, L), member(brilho, L), atualiza_ouro, !.
-executa_acao(pegar) :- posicao(X, Y, _), memory(X, Y, L), member(reflexo, L), energia(E), E < 70, !.
 
 % Se já está na direção certa, anda
 executa_acao(andar) :-

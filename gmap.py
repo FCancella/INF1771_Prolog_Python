@@ -150,23 +150,35 @@ def construir_acoes(caminho, direcao_inicial):
     return acoes
 
 def posicoes_conhecidas_seguras():
-    coordenadas = list(prolog.query("posicoes_conhecidas_seguras(L)"))
-    if len(coordenadas) > 0:
-        coordenadas = coordenadas[0]['L']
-        coordenadas = [eval(s.lstrip(',')) for s in coordenadas]
-    return coordenadas
+    """Retorna lista de posições visitadas que são seguras (sem perigos) do Prolog"""
+    try:
+        resultado = list(prolog.query("posicoes_visitadas_seguras(L)"))
+        if len(resultado) > 0:
+            coordenadas = resultado[0]['L']
+            posicoes = []
+            for coord in coordenadas:
+                coord = str(coord).replace(',(','').replace(')','').split(',')
+                posicoes.append((int(coord[0]), int(coord[1])))
+            return posicoes
+        return []
+    except Exception as e:
+        print(f"Erro ao buscar posições seguras: {e}")
+        return []
 
-def voltar_inicio():
-    """Usa A* para encontrar caminho até (1,1) e retorna lista de ações"""
+def ir_para_posicao(x_destino, y_destino):
+    """Usa A* para encontrar caminho até posição específica e retorna lista de ações"""
     global player_pos
     
     x_atual, y_atual, dir_atual = player_pos
     pos_atual = (x_atual, y_atual)
-    pos_objetivo = (1, 1)
+    pos_objetivo = (x_destino, y_destino)
     
-    posicoes_seguras = set(visitados)
+    posicoes_seguras = set(posicoes_conhecidas_seguras())
     
     caminho = a_estrela(pos_atual, pos_objetivo, posicoes_seguras)
+    
+    if caminho is None:
+        return []
     
     acoes = construir_acoes(caminho, dir_atual)
     
@@ -188,11 +200,27 @@ def decisao():
     
     # Se a ação for 'fim', calcula o caminho de volta ao início
     if acao == "fim":
-        acoes_fila = voltar_inicio()
+        acoes_fila = ir_para_posicao(1, 1)
         if acoes_fila:
             return acoes_fila.pop(0)
         else:
             return ""
+    
+    # Se a ação for 'energia(X,Y)', calcula o caminho até a posição da energia
+    if acao.startswith("energia("):
+        try:
+            coords = acao.replace("energia(", "").replace(")", "").split(",")
+            x_destino = int(coords[0].strip())
+            y_destino = int(coords[1].strip())
+            
+            acoes_fila = ir_para_posicao(x_destino, y_destino)
+            if acoes_fila:
+                return acoes_fila.pop(0)
+            else:
+                return ""
+        except Exception as e:
+            print(f"Erro ao processar ação energia: {e}")
+            pass
     
     return acao
 
